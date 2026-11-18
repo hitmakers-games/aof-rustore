@@ -89,7 +89,7 @@ public class MainActivity extends AppCompatActivity {
         AppMetrica.initWebViewReporting(webView);
         webView.loadUrl(Constants.GAME_URL);
 
-        webView.addJavascriptInterface(new WebViewJavaScriptInterface(this), "app");
+        webView.addJavascriptInterface(new WebViewJavaScriptInterface(this, webView), "app");
 
         boolean isFirstRun = PreferenceManager.getDefaultSharedPreferences(this)
                 .getBoolean("first_run", true);
