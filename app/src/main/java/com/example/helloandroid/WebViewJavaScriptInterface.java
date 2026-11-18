@@ -44,6 +44,7 @@ import ru.rustore.sdk.pay.model.ProductType;
 import ru.rustore.sdk.pay.model.Purchase;
 import ru.rustore.sdk.pay.model.PurchaseId;
 import ru.rustore.sdk.pay.model.RuStorePaymentException;
+import ru.rustore.sdk.pay.model.SdkTheme;
 import ru.rustore.sdk.review.RuStoreReviewManager;
 import ru.rustore.sdk.review.RuStoreReviewManagerFactory;
 import ru.rustore.sdk.review.model.ReviewInfo;
@@ -116,7 +117,7 @@ public class WebViewJavaScriptInterface{
         RuStorePayClient ruStorePayClient = RuStorePayClient.Companion.getInstance();
         PurchaseInteractor purchaseInteractor = ruStorePayClient.getPurchaseInteractor();
 
-        purchaseInteractor.purchase(params, PreferredPurchaseType.ONE_STEP)
+        purchaseInteractor.purchase(params, PreferredPurchaseType.ONE_STEP, SdkTheme.LIGHT, null)
                 .addOnSuccessListener(result -> {
                     try {
                         Map<String, String> params1 = convert(productId, playerId, result.getInvoiceId().getValue(), result.getPurchaseId().getValue());
@@ -286,7 +287,7 @@ public class WebViewJavaScriptInterface{
             PurchaseInteractor purchaseInteractor = RuStorePayClient.Companion.getInstance().getPurchaseInteractor();
 
             if (purchaseInteractor != null) {
-                purchaseInteractor.getPurchases(ProductType.CONSUMABLE_PRODUCT, ProductPurchaseStatus.CONFIRMED)
+                purchaseInteractor.getPurchases(ProductType.CONSUMABLE_PRODUCT, ProductPurchaseStatus.CONFIRMED, null)
                         .addOnSuccessListener(purchases -> {
                             try {
                                 if (purchases != null) {

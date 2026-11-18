@@ -25,6 +25,7 @@ import io.appmetrica.analytics.AppMetrica;
 import io.appmetrica.analytics.AppMetricaConfig;
 import ru.rustore.sdk.pay.IntentInteractor;
 import ru.rustore.sdk.pay.RuStorePayClient;
+import ru.rustore.sdk.pay.model.SdkTheme;
 
 public class MainActivity extends AppCompatActivity {
     private static final String API_KEY = "58cceae9-e3aa-4099-b49b-3fab2c8a5b7f";
@@ -42,7 +43,7 @@ public class MainActivity extends AppCompatActivity {
         intentInteractor = RuStorePayClient.Companion.getInstance().getIntentInteractor();
 
         if (savedInstanceState == null) {
-            intentInteractor.proceedIntent(getIntent());
+            intentInteractor.proceedIntent(getIntent(), SdkTheme.LIGHT);
         }
 
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
@@ -112,7 +113,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        intentInteractor.proceedIntent(intent);
+        intentInteractor.proceedIntent(intent, SdkTheme.LIGHT);
     }
     private void checkConnectionAndLoad() {
         if (isConnected()) {
