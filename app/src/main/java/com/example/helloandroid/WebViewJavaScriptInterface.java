@@ -6,6 +6,7 @@ import android.content.pm.PackageManager;
 import android.preference.PreferenceManager;
 import android.util.Log;
 import android.webkit.JavascriptInterface;
+import android.webkit.WebView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -16,7 +17,12 @@ import com.example.helloandroid.storage.StorageUtil;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.lang.reflect.Type;
+import java.util.ArrayList;
 import java.util.Currency;
 import java.util.HashMap;
 import java.util.List;
@@ -37,13 +43,16 @@ import ru.rustore.sdk.pay.RuStorePayClient;
 import ru.rustore.sdk.pay.UserInteractor;
 import ru.rustore.sdk.pay.model.DeveloperPayload;
 import ru.rustore.sdk.pay.model.PreferredPurchaseType;
+import ru.rustore.sdk.pay.model.Product;
 import ru.rustore.sdk.pay.model.ProductId;
 import ru.rustore.sdk.pay.model.ProductPurchaseParams;
 import ru.rustore.sdk.pay.model.ProductPurchaseStatus;
 import ru.rustore.sdk.pay.model.ProductType;
+import ru.rustore.sdk.pay.model.PromotionInfo;
 import ru.rustore.sdk.pay.model.Purchase;
 import ru.rustore.sdk.pay.model.PurchaseId;
 import ru.rustore.sdk.pay.model.RuStorePaymentException;
+import ru.rustore.sdk.pay.model.SdkTheme;
 import ru.rustore.sdk.review.RuStoreReviewManager;
 import ru.rustore.sdk.review.RuStoreReviewManagerFactory;
 import ru.rustore.sdk.review.model.ReviewInfo;
@@ -54,7 +63,10 @@ import io.appmetrica.analytics.AppMetrica;
  * (as long as they have the @JavascriptInterface annotation)
  */
 public class WebViewJavaScriptInterface{
+    private static final String PRODUCTS_CALLBACK = "onRustoreProducts";
+
     private final Activity activity;
+    private final WebView webView;
 
     private final RuStoreReviewManager reviewManager;
     private ReviewInfo reviewInfo = null;
@@ -62,8 +74,9 @@ public class WebViewJavaScriptInterface{
     /*
      * Need a reference to the context in order to sent a post message
      */
-    public WebViewJavaScriptInterface(Activity activity) {
+    public WebViewJavaScriptInterface(Activity activity, WebView webView) {
         this.activity = activity;
+        this.webView = webView;
 
         reviewManager = RuStoreReviewManagerFactory.INSTANCE.create(activity.getApplicationContext());
     }
@@ -116,7 +129,7 @@ public class WebViewJavaScriptInterface{
         RuStorePayClient ruStorePayClient = RuStorePayClient.Companion.getInstance();
         PurchaseInteractor purchaseInteractor = ruStorePayClient.getPurchaseInteractor();
 
-        purchaseInteractor.purchase(params, PreferredPurchaseType.ONE_STEP)
+        purchaseInteractor.purchase(params, PreferredPurchaseType.ONE_STEP, SdkTheme.LIGHT, null)
                 .addOnSuccessListener(result -> {
                     try {
                         Map<String, String> params1 = convert(productId, playerId, result.getInvoiceId().getValue(), result.getPurchaseId().getValue());
@@ -136,6 +149,78 @@ public class WebViewJavaScriptInterface{
                         Toast.makeText(activity, "Ошибка при покупке продукта", Toast.LENGTH_LONG).show();
                     }
                 });
+    }
+
+    /**
+     * Цены товаров из консоли RuStore (с учётом акций). Ответ асинхронный:
+     * window.onRustoreProducts(requestId, json), где json — {"products":[...]} или {"error":"..."}.
+     * price / basePrice / discountValue — в копейках.
+     */
+    @JavascriptInterface
+    public void getProducts(String requestId, String productIdsJson) {
+        List<ProductId> productIds = new ArrayList<>();
+        try {
+            JSONArray ids = new JSONArray(productIdsJson);
+            for (int i = 0; i < ids.length(); i++) {
+                productIds.add(new ProductId(ids.getString(i)));
+            }
+        } catch (JSONException e) {
+            sendProductsError(requestId, e);
+            return;
+        }
+
+        RuStorePayClient.Companion.getInstance().getProductInteractor().getProducts(productIds)
+                .addOnSuccessListener(products -> {
+                    try {
+                        JSONArray result = new JSONArray();
+                        for (Product product : products) {
+                            result.put(toJson(product));
+                        }
+                        sendProducts(requestId, new JSONObject().put("products", result));
+                    } catch (Exception e) {
+                        sendProductsError(requestId, e);
+                    }
+                })
+                .addOnFailureListener(throwable -> sendProductsError(requestId, throwable));
+    }
+
+    private static JSONObject toJson(Product product) throws JSONException {
+        JSONObject json = new JSONObject()
+                .put("productId", product.getProductId().getValue())
+                .put("price", product.getPrice() != null ? product.getPrice().getValue() : JSONObject.NULL)
+                .put("amountLabel", product.getAmountLabel() != null ? product.getAmountLabel().getValue() : JSONObject.NULL)
+                .put("currency", product.getCurrency() != null ? product.getCurrency().getValue() : JSONObject.NULL);
+
+        PromotionInfo promo = product.getPromotionInfo();
+        if (promo != null) {
+            json.put("promotion", new JSONObject()
+                    .put("code", promo.getCode() != null ? promo.getCode().getValue() : JSONObject.NULL)
+                    .put("name", promo.getName() != null ? promo.getName() : JSONObject.NULL)
+                    .put("basePrice", promo.getBasePrice() != null ? promo.getBasePrice().getValue() : JSONObject.NULL)
+                    .put("discountValue", promo.getDiscountValue() != null ? promo.getDiscountValue().getValue() : JSONObject.NULL)
+                    .put("discountValueLabel", promo.getDiscountValueLabel() != null ? promo.getDiscountValueLabel().getValue() : JSONObject.NULL)
+                    .put("startDate", promo.getStartDate() != null ? promo.getStartDate().getTime() : JSONObject.NULL)
+                    .put("endDate", promo.getEndDate() != null ? promo.getEndDate().getTime() : JSONObject.NULL));
+        }
+        return json;
+    }
+
+    private void sendProductsError(String requestId, Throwable throwable) {
+        Log.e("getProducts", String.valueOf(throwable));
+        try {
+            sendProducts(requestId, new JSONObject().put("error", String.valueOf(throwable)));
+        } catch (JSONException ignore) {
+        }
+    }
+
+    private void sendProducts(String requestId, JSONObject payload) {
+        String script = "window." + PRODUCTS_CALLBACK + " && window." + PRODUCTS_CALLBACK + "("
+                + JSONObject.quote(requestId) + "," + JSONObject.quote(payload.toString()) + ")";
+        activity.runOnUiThread(() -> {
+            if (!activity.isFinishing()) {
+                webView.evaluateJavascript(script, null);
+            }
+        });
     }
 
     @JavascriptInterface
@@ -286,7 +371,7 @@ public class WebViewJavaScriptInterface{
             PurchaseInteractor purchaseInteractor = RuStorePayClient.Companion.getInstance().getPurchaseInteractor();
 
             if (purchaseInteractor != null) {
-                purchaseInteractor.getPurchases(ProductType.CONSUMABLE_PRODUCT, ProductPurchaseStatus.CONFIRMED)
+                purchaseInteractor.getPurchases(ProductType.CONSUMABLE_PRODUCT, ProductPurchaseStatus.CONFIRMED, null)
                         .addOnSuccessListener(purchases -> {
                             try {
                                 if (purchases != null) {
